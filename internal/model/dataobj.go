@@ -33,6 +33,18 @@ type Result struct {
 	Pronounce  map[string]string     `json:"pron"`
 	Paraphrase []string              `json:"para"`
 	Examples   map[string][][]string `json:"eg"`
+	Simple  struct {
+		UKPhonetic string	`json:"ukpron"`
+		USPhonetic string	`json:"uspron"`
+		Levels     []string	`json:"level"`
+		Plural            string	`json:"plural"`
+		ThirdPerson       string	`json:"thper"`
+		PresentParticiple string	`json:"prepar"`
+		PastTense         string	`json:"pstten"`
+		PastParticiple    string	`json:"pstpar"`
+		Comparative       string	`json:"compa"`
+		Superlative       string	`json:"super"`
+	} `json:"simple"`
 	Collins    struct {              // XXX (k): <2023-11-15> 直接提到第一级
 		Star              int    `json:"star"`
 		ViaRank           string `json:"rank"`
@@ -57,4 +69,15 @@ func (r *Result) Initialize() {
 		}
 		zap.S().Debugf("Query: isEn: %v isPhrase: %v", r.IsEN, r.IsPhrase)
 	}
+}
+
+// 检查有没有有道简明数据
+func (r *Result) HasSimpleData() bool {
+    // 先判空：避免r.Simple为nil时访问字段导致空指针panic
+    if r == nil {
+        return false
+    }
+
+    // 核心逻辑：任意一个字段非空则返回true
+    return r.Simple.UKPhonetic != "" || r.Simple.USPhonetic != ""
 }

@@ -23,11 +23,11 @@ import (
 var ydCliLegacy = &http.Client{Timeout: 5 * time.Second}
 var ydCli = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, Timeout: 5 * time.Second}
 
-func requestYoudao(r *model.Result) (body []byte, err error) {
+func requestYoudao(r *model.Result, useNewApi bool) (body []byte, err error) {
 	var req *http.Request
 	var url string
 	var cli *http.Client
-	useNewApi := false
+	// useNewApi := true
 	q := strings.ReplaceAll(r.Query, " ", "%20")
 	if useNewApi {
 		cli = ydCli
@@ -98,37 +98,62 @@ func parseCollinsStar(v string) (star int) {
 
 // return html
 func FetchOnline(r *model.Result) (err error) {
-	body, err := requestYoudao(r)
-	if err != nil {
-		zap.S().Infof("[http-youdao] Failed to request: %s", err)
-		return
-	}
-
-	doc := soup.HTMLParse(string(body))
-	yr := YdResult{r, &doc}
-
-	if r.IsLongText {
-		yr.parseMachineTrans()
-		if r.MachineTrans != "" {
-			r.Found = true
-			go cache.UpdateLongTextCache(r)
+	var yr *YdResult // 定义在所有if块外，整个函数都能访问
+	// 请求老版api
+	if ! r.Found {
+		var body []byte
+		// 如果在缓存中找到，则不用重新更新数据
+		body, err = requestYoudao(r, false)
+		if err != nil {
+			zap.S().Infof("[http-youdao] Failed to request: %s", err)
+			return
 		}
-		return
+
+		
+		doc := soup.HTMLParse(string(body))
+		yr = &YdResult{r, &doc}
+
+		if r.IsLongText {
+			yr.parseMachineTrans()
+			if r.MachineTrans != "" {
+				r.Found = true
+				go cache.UpdateLongTextCache(r)
+			}
+			return
+		}
+
+		yr.parseParaphrase()
+		if yr.isNotFound() {
+			go cache.AppendNotFound(r.Query)
+			return
+		}
+
+		
+		// XXX (k): <2024-01-02> long text?
+		yr.parseKeyword()
+		yr.parsePronounce()
+		yr.parseCollins()
+		yr.parseExamples()
+
+		r.Found = true
 	}
-
-	yr.parseParaphrase()
-	if yr.isNotFound() {
-		go cache.AppendNotFound(r.Query)
-		return
+	
+	// 请求新版api 
+	if ! r.HasSimpleData() {
+		bodyNew, errNew := requestYoudao(r, true)
+		if errNew != nil {
+			// 不返回errNew
+			zap.S().Infof("[http-youdao] Failed to request: %s", errNew)
+		} else {
+			if yr == nil {
+                // 如果老版api没走（r.Found为false），手动初始化YdResult
+                yr = &YdResult{Result: r} // 假设YdResult有Result字段指向r，根据实际结构调整
+            }
+			// 解析新版
+			yr.ParseYoudaoSimple(bodyNew)
+		}
 	}
-
-	// XXX (k): <2024-01-02> long text?
-	yr.parseKeyword()
-	yr.parsePronounce()
-	yr.parseCollins()
-	yr.parseExamples()
-
-	r.Found = true
+	
 	go cache.UpdateQueryCache(r)
 	return
 }

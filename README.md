@@ -134,6 +134,15 @@ CGO_ENABLED=1 go build -o kd cmd/kd.go
 mv kd /usr/bin/kd
 ```
 
+> Windows平台
+
+```bash
+go mod tidy
+set CGO_ENABLED=1
+go build -o kd.exe ./cmd/kd/kd.go
+
+```
+
 ### 卸载
 
 <details><summary>🖱️ 点击展开</summary><pre>

@@ -114,7 +114,7 @@ func Query(query string, noCache bool, longText bool) (r *model.Result, err erro
 	}
 
 	if !noCache {
-		if cacheErr := q.FetchCached(r); cacheErr == nil && r.Found {
+		if cacheErr := q.FetchCached(r); cacheErr == nil && r.Found && r.HasSimpleData() {
 			return
 		}
 	}

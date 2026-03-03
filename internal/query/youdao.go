@@ -8,6 +8,7 @@ import (
 	"github.com/Karmenzind/kd/pkg/str"
 	"github.com/anaskhan96/soup"
 	"go.uber.org/zap"
+	"github.com/PuerkitoBio/goquery"
 )
 
 type YdResult struct {
@@ -222,4 +223,113 @@ func (r *YdResult) parseMachineTrans() {
 
 func (r *YdResult) isNotFound() bool {
 	return r.Paraphrase == nil || len(r.Paraphrase) == 0
+}
+
+// ------------------------------------------------------------
+// 新版api解析
+// ------------------------------------------------------------
+
+func normalizeText(text string) string {
+	// 去前后空格
+	text = strings.TrimSpace(text)
+
+	// 去掉前后 /
+	text = strings.Trim(text, "/")
+
+	// 再 trim 一次，防止 "/ xxx /"
+	text = strings.TrimSpace(text)
+
+	// 去掉可能的 HTML 残留标签
+	text = strings.ReplaceAll(text, "<i>", "")
+	text = strings.ReplaceAll(text, "</i>", "")
+
+	// 去掉多余空格
+	text = strings.Join(strings.Fields(text), " ")
+
+	return text
+}
+
+// 只解析youdao简明英语中的音标、词汇类型和各种时态词，含义和例句使用老版的科林斯
+func (r *YdResult) ParseYoudaoSimple(html []byte)  error {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(html)))
+	if err != nil {
+		return err
+	}
+
+	// info := &SimpleInfo{}
+
+	// // 解析单词
+	// titleSel := doc.Find("div.title").First()
+	// var word string
+
+	// titleSel.Contents().Each(func(i int, s *goquery.Selection) {
+	// 	if goquery.NodeName(s) == "#text" {
+	// 		text := strings.TrimSpace(s.Text())
+	// 		if text != "" {
+	// 			word = text
+	// 		}
+	// 	}
+	// })
+
+	// info.Word = word
+
+	/*
+	==============================
+	1️⃣ 解析音标
+	==============================
+	*/
+	doc.Find(".phonetic").Each(func(i int, s *goquery.Selection) {
+		text := strings.TrimSpace(s.Text())
+		parentText := s.Parent().Text()
+
+		if strings.Contains(parentText, "英") || strings.Contains(parentText, "UK") {
+			r.Simple.UKPhonetic = normalizeText(text)
+		}
+		if strings.Contains(parentText, "美") || strings.Contains(parentText, "US") {
+			r.Simple.USPhonetic = normalizeText(text)
+		}
+	})
+
+	/*
+	==============================
+	2️⃣ 解析等级标签
+	==============================
+	*/
+	doc.Find(".exam_type span").Each(func(i int, s *goquery.Selection) {
+		level := normalizeText(s.Text())
+		if level != "" {
+			r.Simple.Levels = append(r.Simple.Levels, level)
+		}
+	})
+
+	/*
+	==============================
+	3️⃣ 解析词形变化（新版 DOM 结构）
+	==============================
+	*/
+
+	doc.Find("ul.word-wfs-less li.word-wfs-cell-less").Each(func(i int, li *goquery.Selection) {
+
+		name := strings.TrimSpace(li.Find(".wfs-name").Text())
+		value := strings.TrimSpace(li.Find(".transformation").Text())
+
+		switch name {
+		case "复数":
+			r.Simple.Plural = value
+		case "第三人称单数":
+			r.Simple.ThirdPerson = value
+		case "现在分词":
+			r.Simple.PresentParticiple = value
+		case "过去式":
+			r.Simple.PastTense = value
+		case "过去分词":
+			r.Simple.PastParticiple = value
+		case "比较级":
+			r.Simple.Comparative = value
+		case "最高级":
+			r.Simple.Superlative = value
+		}
+	})
+
+	return  nil
 }
